@@ -1,0 +1,251 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-resources-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-data-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-assets-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-config-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: romm-redis-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: romm-config
+  namespace: services
+data:
+  DB_HOST: "romm-db"
+  DB_NAME: "romm"
+  DB_USER: "romm-user"
+  DB_PASSWD: "romm"
+  ROMM_AUTH_SECRET_KEY: "c2c739d7e2490919fa044ce40b58630019c29adef647134894f9b41185f1fed7"
+  IGDB_CLIENT_ID: "x31i5z43nie79uym61biue0vulzw8b"
+  IGDB_CLIENT_SECRET: "36t7q22ecuf3lqcsmxwfmnzzz7gcyi"
+  STEAMGRIDDB_API_KEY: "217fc96f89524489b113b690959a5976"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: romm
+  namespace: services
+  labels:
+    app: romm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: romm
+  template:
+    metadata:
+      labels:
+        app: romm
+    spec:
+      containers:
+        - name: romm
+          image: rommapp/romm:latest
+          imagePullPolicy: "Always"
+          resources:
+            limits:
+              memory: "1500Mi"
+              cpu: "0.5"
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: romm-config
+          volumeMounts:
+            - name: romm-resources
+              mountPath: /romm/resources
+            - name: romm-redis
+              mountPath: /redis-data
+            - name: romm-library
+              mountPath: /romm/library
+            - name: romm-assets
+              mountPath: /romm/assets
+            - name: romm-config
+              mountPath: /romm/config
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: true
+            privileged: true
+            capabilities:
+              drop:
+                - "ALL"
+            runAsNonRoot: false
+            seccompProfile:
+              type: RuntimeDefault
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: romm-library
+          nfs:
+              server: edc.alexandria.dc
+              path: /mnt/user/roms
+        - name: romm-resources
+          persistentVolumeClaim:
+            claimName: romm-resources-pvc
+        - name: romm-data
+          persistentVolumeClaim:
+            claimName: romm-data-pvc
+        - name: romm-assets
+          persistentVolumeClaim:
+            claimName: romm-assets-pvc
+        - name: romm-config
+          persistentVolumeClaim:
+            claimName: romm-config-pvc
+        - name: romm-redis
+          persistentVolumeClaim:
+            claimName: romm-redis-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: romm-db
+  namespace: services
+  labels:
+    app: romm-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: romm-db
+  template:
+    metadata:
+      labels:
+        app: romm-db
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:latest
+          imagePullPolicy: "Always"
+          resources:
+            limits:
+              memory: "725Mi"
+              cpu: "0.25"
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              value: "admin"
+            - name: MARIADB_DATABASE
+              value: "romm"
+            - name: MARIADB_USER
+              value: "romm-user"
+            - name: MARIADB_PASSWORD
+              value: "romm"
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          securityContext:
+            allowPrivilegeEscalation: true
+            privileged: true
+            runAsNonRoot: false
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: romm
+  namespace: services
+  labels:
+    app: romm
+spec:
+  ports:
+    - name: web-tcp
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+    - name: web-udp
+      protocol: UDP
+      port: 80
+      targetPort: 8080
+  selector:
+    app: romm
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: romm-db
+  namespace: services
+  labels:
+    app: romm-db
+spec:
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
+  selector:
+    app: romm-db

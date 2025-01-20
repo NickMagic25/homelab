@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer # I'm using ClusterIssuer here
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: majkic65@gmail.com
+    privateKeySecretRef:
+      name: fInAl!ty
+    solvers:
+    - http01:
+        ingress:
+          class: traefik 

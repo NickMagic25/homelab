@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: radarr-config
+  namespace: arrsuite
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: radarr
+  labels:
+    app: radarr
+  namespace: arrsuite
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: radarr
+  template:
+    metadata:
+      labels:
+        app: radarr
+    spec:
+      containers:
+        - name: radarr
+          image: lscr.io/linuxserver/radarr:latest
+          ports:
+            - name: http
+              containerPort: 7878
+          resources:
+            limits:
+              cpu: "0.75"
+              memory: "500Mi"
+          env:
+            - name: TZ
+              value: "America/New_York" # Replace with your timezone
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: movies
+              mountPath: /mnt/movies
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: radarr-config
+        - name: movies
+          nfs:
+            path: /mnt/user/Media/data/Movies
+            server: edc.alexandria.dc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: radarr
+  labels:
+    app: radarr
+  namespace: arrsuite
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 7878
+  selector:
+    app: radarr
+  type: LoadBalancer

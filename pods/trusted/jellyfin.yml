@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-cache-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: longhorn
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jellyfin-data-pvc
+  namespace: services
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: jellyfin
+    app.kubernetes.io/instance: jellyfin
+    app.kubernetes.io/name: jellyfin
+  name: jellyfin
+  namespace: services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jellyfin
+  template:
+    metadata:
+      labels:
+        app: jellyfin
+        app.kubernetes.io/name: jellyfin
+    spec:
+      runtimeClassName: nvidia
+      containers:
+      - image: jellyfin/jellyfin
+        imagePullPolicy: Always
+        name: jellyfin
+        resources:
+          requests:
+            nvidia.com/gpu: "1" 
+          limits:
+            nvidia.com/gpu: "1" 
+            cpu: "5"
+            memory: "6Gi"
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+        ports:
+        - containerPort: 8096
+          name: web
+          protocol: TCP
+        - containerPort: 8920
+          name: web-ssl
+          protocol: TCP
+        env:
+        - name: TZ
+          value: America/New_York
+        volumeMounts:
+        - mountPath: /config
+          name: jellyfin-cache
+        - mountPath: /cache
+          name: jellyfin-data
+        - mountPath: /data
+          name: jellyfin
+          subPath: data
+      volumes:
+        - name: jellyfin
+          nfs:
+            path: /mnt/user/Media
+            server: edc.alexandria.dc
+        - name: jellyfin-cache
+          persistentVolumeClaim:
+            claimName: jellyfin-cache-pvc
+        - name: jellyfin-data
+          persistentVolumeClaim:
+            claimName: jellyfin-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: jellyfin
+  name: jellyfin
+  namespace: services 
+spec:
+  ports:
+  - protocol: TCP
+    name: web
+    port: 80
+    targetPort: 8096
+  - protocol: TCP
+    name: web-ssl
+    port: 443
+    targetPort: 8920
+  selector:
+    app: jellyfin
+  type: LoadBalancer
